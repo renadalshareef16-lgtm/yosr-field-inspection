@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import "./index.css";
 import logoImage from "./assets/logo.png";
+import { supabase } from "./supabaseClient";
 
 const STORAGE_KEYS = {
-  users: "yosr_users_v2",
-  visits: "yosr_visits_v2",
-  submissions: "yosr_submissions_v2",
-  currentUserId: "yosr_current_user_id_v2",
+  currentUserId: "yosr_supabase_current_user_id_v2",
 };
 
 const roleOptions = [
@@ -17,6 +15,12 @@ const roleOptions = [
 ];
 
 const shiftOptions = ["الفترة الأولى", "الفترة الثانية", "الفترة الثالثة"];
+
+const shiftTimes = {
+  "الفترة الأولى": "8:00 ص - 4:00 م",
+  "الفترة الثانية": "4:00 م - 12:00 ص",
+  "الفترة الثالثة": "12:00 ص - 8:00 ص",
+};
 
 function getPermissionsByRole(role) {
   if (role === "admin") {
@@ -57,45 +61,6 @@ function getPermissionsByRole(role) {
     canManagePermissions: false,
   };
 }
-
-const defaultUsers = [
-  {
-    id: 1,
-    nationalId: "0000000001",
-    fullName: "ريناد الشريف",
-    name: "ريناد الشريف",
-    phone: "05xxxxxxxx",
-    username: "admin",
-    password: "123456",
-    role: "admin",
-    roleLabel: "إدارية النظام",
-    shift: "كل الفترات",
-    supervisor: "—",
-    status: "نشط",
-    permissions: getPermissionsByRole("admin"),
-    todayVisits: 0,
-    suspicious: 0,
-    accuracy: "100%",
-  },
-  {
-    id: 2,
-    nationalId: "0000000002",
-    fullName: "محمد القحطاني",
-    name: "محمد القحطاني",
-    phone: "05xxxxxxxx",
-    username: "alqhtani",
-    password: "123456",
-    role: "supervisor",
-    roleLabel: "مشرف الفترة الثانية",
-    shift: "الفترة الثانية",
-    supervisor: "صهيب",
-    status: "نشط",
-    permissions: getPermissionsByRole("supervisor"),
-    todayVisits: 0,
-    suspicious: 0,
-    accuracy: "100%",
-  },
-];
 
 const formTypes = {
   readiness: {
@@ -234,48 +199,106 @@ const emptyForm = {
   visitTime: "",
   shift: "الفترة الأولى",
   gpsStatus: "داخل النطاق",
-  photoStatus: "مرفقة",
   actionTaken: "لا توجد ملاحظات",
   deadlineHours: "",
   notes: "",
+  photos: [],
 };
 
 const emptyUserForm = {
   nationalId: "",
   fullName: "",
   phone: "",
-  username: "",
   password: "",
   role: "field",
   shift: "الفترة الأولى",
-  supervisor: "محمد القحطاني",
+  supervisor: "—",
   status: "نشط",
   permissions: getPermissionsByRole("field"),
 };
 
-function readStorage(key, fallback) {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 function getRoleLabel(role) {
   return roleOptions.find((item) => item.value === role)?.label || "مستخدم";
+}
+
+function toUser(row) {
+  return {
+    id: row.id,
+    nationalId: row.national_id,
+    fullName: row.full_name,
+    phone: row.phone || "",
+    password: row.password || "",
+    role: row.role || "field",
+    roleLabel: row.role_label || getRoleLabel(row.role || "field"),
+    shift: row.shift || "الفترة الأولى",
+    supervisor: row.supervisor || "—",
+    status: row.status || "نشط",
+    permissions: {
+      canFillForms: !!row.can_fill_forms,
+      canViewSubmissions: !!row.can_view_submissions,
+      canViewReports: !!row.can_view_reports,
+      canManageUsers: !!row.can_manage_users,
+      canManagePermissions: !!row.can_manage_permissions,
+    },
+  };
+}
+
+function toVisit(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    employee: row.employee,
+    housing: row.housing,
+    permit: row.permit,
+    submitTime: row.submit_time,
+    shift: row.shift,
+    gps: row.gps,
+    photo: row.photo,
+    status: row.status,
+    risk: row.risk,
+  };
+}
+
+function toSubmission(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    employee: row.employee,
+    formType: row.form_type,
+    housingName: row.housing_name,
+    buildingNumber: row.building_number,
+    permitNumber: row.permit_number,
+    nationality: row.nationality,
+    pilgrimsCount: row.pilgrims_count,
+    electricityNumber: row.electricity_number,
+    ownerName: row.owner_name,
+    address: row.address,
+    visitDate: row.visit_date,
+    visitTime: row.visit_time,
+    shift: row.shift,
+    gpsStatus: row.gps_status,
+    photoStatus: row.photo_status,
+    actionTaken: row.action_taken,
+    deadlineHours: row.deadline_hours,
+    notes: row.notes,
+    answers: row.answers || {},
+    photos: row.photos || [],
+    submittedAt: row.submitted_at,
+    status: row.status,
+    risk: row.risk,
+  };
+}
+
+function getStatusClass(status) {
+  if (status === "نشط" || status === "معتمدة") return "success";
+  if (status === "موقوف" || status === "مرفوضة") return "danger";
+  return "warning";
 }
 
 function getRiskClass(risk) {
   if (risk === "مرتفع") return "danger";
   if (risk === "متوسط") return "warning";
   return "success";
-}
-
-function getStatusClass(status) {
-  if (status === "نشط" || status === "معتمدة") return "success";
-  if (status === "موقوف") return "danger";
-  return "warning";
 }
 
 function getNowTime() {
@@ -310,6 +333,17 @@ function getDefaultView(user) {
   return "profile";
 }
 
+function getSupervisorByRole(role, shift, users) {
+  if (role === "admin" || role === "committee_head") return "—";
+  if (role === "supervisor") return "رئيس لجنة الإسكان";
+
+  const shiftSupervisor = users.find(
+    (user) => user.role === "supervisor" && user.shift === shift && user.status === "نشط"
+  );
+
+  return shiftSupervisor?.fullName || "—";
+}
+
 function ThemeToggle({ theme, onToggleTheme }) {
   const nextLabel = theme === "dark" ? "الوضع الفاتح" : "الوضع الداكن";
   const nextIcon = theme === "dark" ? "☀️" : "🌙";
@@ -326,15 +360,15 @@ function ThemeToggle({ theme, onToggleTheme }) {
 }
 
 function LoginPage({ onLogin, onForgotPassword, theme, onToggleTheme }) {
-  const [username, setUsername] = useState("");
+  const [nationalId, setNationalId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     setError("");
 
-    const result = onLogin(username.trim(), password.trim());
+    const result = await onLogin(nationalId.trim(), password.trim());
 
     if (result?.error) {
       setError(result.error);
@@ -372,16 +406,19 @@ function LoginPage({ onLogin, onForgotPassword, theme, onToggleTheme }) {
           <div className="auth-card-head">
             <span>مرحبًا بك</span>
             <h2>تسجيل الدخول</h2>
-            <p>أدخل بيانات الحساب المعتمد للمتابعة إلى نظام الجولات الميدانية.</p>
+            <p>
+              أدخل بيانات الحساب المعتمد للمتابعة إلى نظام الجولات الميدانية التابعة
+              للجنة الإسكان.
+            </p>
           </div>
 
           <label>
-            اسم المستخدم
+            رقم الهوية
             <input
               type="text"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="اسم المستخدم"
+              value={nationalId}
+              onChange={(event) => setNationalId(event.target.value)}
+              placeholder="رقم الهوية"
               autoComplete="username"
             />
           </label>
@@ -409,11 +446,7 @@ function LoginPage({ onLogin, onForgotPassword, theme, onToggleTheme }) {
               تذكرني
             </label>
 
-            <button
-              type="button"
-              className="link-button"
-              onClick={onForgotPassword}
-            >
+            <button type="button" className="link-button" onClick={onForgotPassword}>
               نسيت كلمة المرور؟
             </button>
           </div>
@@ -492,10 +525,6 @@ function ProfilePage({ employee, onBack, theme, onToggleTheme }) {
               <strong>{employee.nationalId || "—"}</strong>
             </div>
             <div>
-              <span>اسم المستخدم</span>
-              <strong>{employee.username}</strong>
-            </div>
-            <div>
               <span>رقم الجوال</span>
               <strong>{employee.phone || "—"}</strong>
             </div>
@@ -508,7 +537,7 @@ function ProfilePage({ employee, onBack, theme, onToggleTheme }) {
               <strong>{employee.shift}</strong>
             </div>
             <div>
-              <span>المشرف</span>
+              <span>المسؤول المباشر</span>
               <strong>{employee.supervisor}</strong>
             </div>
           </div>
@@ -536,11 +565,561 @@ function ProfilePage({ employee, onBack, theme, onToggleTheme }) {
   );
 }
 
-function SubmissionDetails({ submission, onBack, theme, onToggleTheme }) {
+function UserManagementPage({ users, loadAllData, currentUser }) {
+  const [form, setForm] = useState(emptyUserForm);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  function updateForm(field, value) {
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+
+      if (field === "role") {
+        next.permissions = getPermissionsByRole(value);
+        next.roleLabel = getRoleLabel(value);
+        next.shift =
+          value === "admin" || value === "committee_head"
+            ? "كل الفترات"
+            : current.shift === "كل الفترات"
+            ? "الفترة الأولى"
+            : current.shift;
+        next.supervisor = getSupervisorByRole(value, next.shift, users);
+      }
+
+      if (field === "shift") {
+        next.supervisor = getSupervisorByRole(current.role, value, users);
+      }
+
+      return next;
+    });
+  }
+
+  function updatePermission(permissionName) {
+    setForm((current) => ({
+      ...current,
+      permissions: {
+        ...current.permissions,
+        [permissionName]: !current.permissions[permissionName],
+      },
+    }));
+  }
+
+  function resetForm() {
+    setForm(emptyUserForm);
+    setEditingId(null);
+  }
+
+  async function saveUser(event) {
+    event.preventDefault();
+    setSaving(true);
+
+    if (!form.nationalId.trim() || !form.fullName.trim() || !form.password.trim()) {
+      alert("رقم الهوية والاسم الكامل وكلمة المرور حقول مطلوبة.");
+      setSaving(false);
+      return;
+    }
+
+    const duplicate = users.some(
+      (user) => user.nationalId.trim() === form.nationalId.trim() && user.id !== editingId
+    );
+
+    if (duplicate) {
+      alert("رقم الهوية مستخدم مسبقًا.");
+      setSaving(false);
+      return;
+    }
+
+    const finalSupervisor = getSupervisorByRole(form.role, form.shift, users);
+
+    const payload = {
+      national_id: form.nationalId.trim(),
+      full_name: form.fullName.trim(),
+      phone: form.phone.trim(),
+      password: form.password,
+      role: form.role,
+      role_label: form.role === "supervisor" ? `مشرف ${form.shift}` : getRoleLabel(form.role),
+      shift: form.shift,
+      supervisor: finalSupervisor,
+      status: form.status,
+      can_fill_forms: form.permissions.canFillForms,
+      can_view_submissions: form.permissions.canViewSubmissions,
+      can_view_reports: form.permissions.canViewReports,
+      can_manage_users: form.permissions.canManageUsers,
+      can_manage_permissions: form.permissions.canManagePermissions,
+    };
+
+    const query = editingId
+      ? supabase.from("users_profiles").update(payload).eq("id", editingId)
+      : supabase.from("users_profiles").insert(payload);
+
+    const { error } = await query;
+
+    if (error) {
+      alert(`تعذر حفظ المستخدم: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    await loadAllData();
+    resetForm();
+    setSaving(false);
+  }
+
+  function editUser(user) {
+    setEditingId(user.id);
+    setForm({
+      nationalId: user.nationalId || "",
+      fullName: user.fullName || "",
+      phone: user.phone || "",
+      password: user.password || "",
+      role: user.role || "field",
+      shift: user.shift || "الفترة الأولى",
+      supervisor: user.supervisor || "—",
+      status: user.status || "نشط",
+      permissions: user.permissions || getPermissionsByRole(user.role || "field"),
+    });
+  }
+
+  async function toggleStatus(userId, currentStatus) {
+    if (userId === currentUser.id) {
+      alert("لا يمكن إيقاف الحساب الحالي.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("users_profiles")
+      .update({ status: currentStatus === "نشط" ? "موقوف" : "نشط" })
+      .eq("id", userId);
+
+    if (error) {
+      alert(`تعذر تعديل حالة الحساب: ${error.message}`);
+      return;
+    }
+
+    await loadAllData();
+  }
+
+  async function deleteUser(userId) {
+    if (userId === currentUser.id) {
+      alert("لا يمكن حذف الحساب الحالي.");
+      return;
+    }
+
+    const confirmDelete = window.confirm("هل تريد حذف هذا المستخدم؟");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase.from("users_profiles").delete().eq("id", userId);
+
+    if (error) {
+      alert(`تعذر حذف المستخدم: ${error.message}`);
+      return;
+    }
+
+    await loadAllData();
+  }
+
+  return (
+    <section className="content-grid">
+      <form className="content-card wide" onSubmit={saveUser}>
+        <div className="card-head">
+          <div>
+            <h3>👥 إدارة المستخدمين والصلاحيات</h3>
+            <p>إنشاء الحسابات وتحديد الصلاحيات وحالة التفعيل.</p>
+          </div>
+
+          {editingId && (
+            <button type="button" className="mini-btn" onClick={resetForm}>
+              إلغاء التعديل
+            </button>
+          )}
+        </div>
+
+        <div className="field-form-layout">
+          <div className="form-card">
+            <h3>{editingId ? "تعديل مستخدم" : "إضافة مستخدم جديد"}</h3>
+
+            <div className="form-grid">
+              <label>
+                رقم الهوية
+                <input
+                  type="text"
+                  value={form.nationalId}
+                  onChange={(event) => updateForm("nationalId", event.target.value)}
+                  placeholder="رقم الهوية"
+                />
+              </label>
+
+              <label>
+                الاسم الكامل
+                <input
+                  type="text"
+                  value={form.fullName}
+                  onChange={(event) => updateForm("fullName", event.target.value)}
+                  placeholder="الاسم الكامل"
+                />
+              </label>
+
+              <label>
+                رقم الجوال
+                <input
+                  type="text"
+                  value={form.phone}
+                  onChange={(event) => updateForm("phone", event.target.value)}
+                  placeholder="رقم الجوال"
+                />
+              </label>
+
+              <label>
+                كلمة المرور
+                <input
+                  type="text"
+                  value={form.password}
+                  onChange={(event) => updateForm("password", event.target.value)}
+                  placeholder="كلمة المرور"
+                />
+              </label>
+
+              <label>
+                الدور الوظيفي
+                <select value={form.role} onChange={(event) => updateForm("role", event.target.value)}>
+                  {roleOptions.map((role) => (
+                    <option key={role.value} value={role.value}>
+                      {role.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                الفترة
+                <select
+                  value={form.shift}
+                  onChange={(event) => updateForm("shift", event.target.value)}
+                  disabled={form.role === "admin" || form.role === "committee_head"}
+                >
+                  <option>كل الفترات</option>
+                  {shiftOptions.map((shift) => (
+                    <option key={shift}>{shift}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                المسؤول المباشر
+                <input type="text" value={form.supervisor} disabled />
+              </label>
+
+              <label>
+                حالة الحساب
+                <select value={form.status} onChange={(event) => updateForm("status", event.target.value)}>
+                  <option>نشط</option>
+                  <option>موقوف</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="form-card">
+            <h3>صلاحيات الحساب</h3>
+
+            <div className="notes-list">
+              {Object.entries({
+                canFillForms: "تعبئة الاستمارات",
+                canViewSubmissions: "مشاهدة سجل التعبئة",
+                canViewReports: "مشاهدة التقارير والرقابة",
+                canManageUsers: "إدارة المستخدمين",
+                canManagePermissions: "تعديل الصلاحيات",
+              }).map(([key, label]) => (
+                <button
+                  type="button"
+                  key={key}
+                  className={`mini-btn ${form.permissions[key] ? "active" : ""}`}
+                  onClick={() => updatePermission(key)}
+                  style={{
+                    width: "100%",
+                    justifyContent: "space-between",
+                    display: "flex",
+                    alignItems: "center",
+                    background: form.permissions[key]
+                      ? "rgba(66, 199, 137, 0.18)"
+                      : "var(--toggle-bg)",
+                  }}
+                >
+                  <span>{label}</span>
+                  <strong>{form.permissions[key] ? "مفتوحة ✅" : "مقفلة 🔒"}</strong>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="submit-row">
+          <button type="submit" className="main-submit" disabled={saving}>
+            {saving ? "جاري الحفظ..." : editingId ? "حفظ تعديل المستخدم" : "إنشاء المستخدم"}
+          </button>
+        </div>
+      </form>
+
+      <div className="content-card wide">
+        <div className="card-head">
+          <div>
+            <h3>قائمة المستخدمين</h3>
+            <p>الحسابات المعتمدة في النظام</p>
+          </div>
+        </div>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>الاسم</th>
+                <th>رقم الهوية</th>
+                <th>الجوال</th>
+                <th>الدور</th>
+                <th>الفترة</th>
+                <th>المسؤول المباشر</th>
+                <th>الحالة</th>
+                <th>الصلاحيات</th>
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.fullName}</td>
+                  <td>{user.nationalId || "—"}</td>
+                  <td>{user.phone || "—"}</td>
+                  <td>{user.roleLabel || getRoleLabel(user.role)}</td>
+                  <td>{user.shift}</td>
+                  <td>{user.supervisor}</td>
+                  <td>
+                    <span className={`status-badge ${getStatusClass(user.status)}`}>
+                      {user.status}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="status-badge success">
+                      {Object.values(user.permissions || {}).filter(Boolean).length} مفتوحة
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <button type="button" className="mini-btn" onClick={() => editUser(user)}>
+                        تعديل
+                      </button>
+                      <button type="button" className="mini-btn" onClick={() => toggleStatus(user.id, user.status)}>
+                        {user.status === "نشط" ? "إيقاف" : "تفعيل"}
+                      </button>
+                      <button type="button" className="mini-btn" onClick={() => deleteUser(user.id)}>
+                        حذف
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VisitsTable({ visits, compact = false }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>الموظف</th>
+            <th>السكن</th>
+            <th>رقم التصريح</th>
+            <th>وقت الإرسال</th>
+            <th>الفترة</th>
+            <th>الموقع</th>
+            <th>الصورة</th>
+            <th>الحالة</th>
+            {!compact && <th>الخطورة</th>}
+          </tr>
+        </thead>
+
+        <tbody>
+          {visits.length === 0 ? (
+            <tr>
+              <td colSpan={compact ? "8" : "9"}>لا توجد جولات مسجلة.</td>
+            </tr>
+          ) : (
+            visits.map((visit) => (
+              <tr key={visit.id}>
+                <td>{visit.employee}</td>
+                <td>{visit.housing}</td>
+                <td>{visit.permit}</td>
+                <td>{visit.submitTime}</td>
+                <td>{visit.shift}</td>
+                <td>{visit.gps}</td>
+                <td>{visit.photo}</td>
+                <td>
+                  <span className={`status-badge ${getStatusClass(visit.status)}`}>
+                    {visit.status}
+                  </span>
+                </td>
+                {!compact && (
+                  <td>
+                    <span className={`status-badge ${getRiskClass(visit.risk)}`}>
+                      {visit.risk}
+                    </span>
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PrintableSubmission({ submission }) {
   const formMeta = formTypes[submission.formType];
 
   return (
+    <div style={{ display: "none" }}>
+      <div id={`print-${submission.id}`}>
+        <div style={{ direction: "rtl", fontFamily: "Arial, sans-serif", padding: "28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
+            <img src={logoImage} alt="يسر المشاعر" style={{ width: "110px", height: "80px", objectFit: "contain" }} />
+            <div>
+              <h1 style={{ margin: 0, fontSize: "24px" }}>يسر المشاعر</h1>
+              <p style={{ margin: "6px 0 0", color: "#555" }}>نظام الجولات الميدانية لمساكن الحجاج</p>
+            </div>
+          </div>
+
+          <h2 style={{ borderBottom: "2px solid #5e1c84", paddingBottom: "12px" }}>
+            {formMeta.title}
+          </h2>
+
+          <h3>بيانات الزيارة</h3>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+            <tbody>
+              {[
+                ["اسم الموظف", submission.employee],
+                ["اسم السكن", submission.housingName || "—"],
+                ["رقم التصريح", submission.permitNumber || "—"],
+                ["رقم العمارة", submission.buildingNumber || "—"],
+                ["الجنسية", submission.nationality || "—"],
+                ["عدد الحجاج", submission.pilgrimsCount || "—"],
+                ["الفترة", submission.shift],
+                ["تاريخ الزيارة", submission.visitDate || "—"],
+                ["وقت الزيارة", submission.visitTime || "—"],
+                ["وقت الإرسال", submission.submittedAt],
+                ["حالة الموقع", submission.gpsStatus],
+                ["حالة الصورة", submission.photoStatus],
+                ["الحالة", submission.status],
+              ].map(([label, value]) => (
+                <tr key={label}>
+                  <td style={{ border: "1px solid #ddd", padding: "10px", fontWeight: "bold", width: "30%" }}>
+                    {label}
+                  </td>
+                  <td style={{ border: "1px solid #ddd", padding: "10px" }}>{value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h3>إجابات بنود الكشف</h3>
+          {formMeta.questions.map((section) => (
+            <div key={section.section} style={{ marginBottom: "18px" }}>
+              <h4 style={{ color: "#5e1c84" }}>{section.section}</h4>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  {section.items.map((item) => (
+                    <tr key={item}>
+                      <td style={{ border: "1px solid #ddd", padding: "9px", width: "75%" }}>{item}</td>
+                      <td style={{ border: "1px solid #ddd", padding: "9px", fontWeight: "bold" }}>
+                        {submission.answers[item] || "لم يحدد"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+
+          <h3>الملاحظات</h3>
+          <p style={{ border: "1px solid #ddd", padding: "12px", minHeight: "70px" }}>
+            {submission.notes || "لا توجد ملاحظات مدخلة."}
+          </p>
+
+          {submission.photos?.length > 0 && (
+            <>
+              <h3>الصور المرفقة</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+                {submission.photos.map((photo) => (
+                  <div key={photo.id}>
+                    <p style={{ margin: "0 0 6px", fontWeight: "bold" }}>{photo.label}</p>
+                    <img
+                      src={photo.url}
+                      alt={photo.label}
+                      style={{
+                        width: "100%",
+                        maxHeight: "260px",
+                        objectFit: "cover",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{ marginTop: "36px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+            <div>
+              <strong>توقيع الموظف:</strong>
+              <div style={{ borderBottom: "1px solid #333", height: "42px" }} />
+            </div>
+            <div>
+              <strong>اعتماد المشرف:</strong>
+              <div style={{ borderBottom: "1px solid #333", height: "42px" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubmissionDetails({ submission, onBack, theme, onToggleTheme }) {
+  const formMeta = formTypes[submission.formType];
+
+  function printSubmission() {
+    const printContent = document.getElementById(`print-${submission.id}`)?.innerHTML;
+    if (!printContent) return;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${formMeta.title}</title>
+        </head>
+        <body>
+          ${printContent}
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }
+
+  return (
     <main className="app-page" dir="rtl">
+      <PrintableSubmission submission={submission} />
+
       <header className="topbar">
         <div>
           <span>تفاصيل التعبئة</span>
@@ -549,6 +1128,9 @@ function SubmissionDetails({ submission, onBack, theme, onToggleTheme }) {
 
         <div className="topbar-actions">
           <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
+          <button type="button" className="topbar-btn" onClick={printSubmission}>
+            🖨️ طباعة الاستمارة
+          </button>
           <button type="button" className="topbar-btn" onClick={onBack}>
             رجوع للسجل
           </button>
@@ -563,8 +1145,8 @@ function SubmissionDetails({ submission, onBack, theme, onToggleTheme }) {
             </span>
             <h2>{submission.housingName || "سكن بدون اسم"}</h2>
             <p>
-              الموظف: {submission.employee} · الفترة: {submission.shift} · وقت
-              الإرسال: {submission.submittedAt}
+              الموظف: {submission.employee} · الفترة: {submission.shift} · وقت الإرسال:{" "}
+              {submission.submittedAt}
             </p>
           </div>
 
@@ -635,6 +1217,35 @@ function SubmissionDetails({ submission, onBack, theme, onToggleTheme }) {
           </div>
         </div>
 
+        {submission.photos?.length > 0 && (
+          <div className="content-card wide">
+            <div className="card-head">
+              <div>
+                <h3>📸 الصور المرفقة</h3>
+                <p>صور التوثيق المرفوعة مع الاستمارة</p>
+              </div>
+            </div>
+
+            <div className="summary-grid">
+              {submission.photos.map((photo) => (
+                <div className="summary-box" key={photo.id}>
+                  <span>{photo.label}</span>
+                  <img
+                    src={photo.url}
+                    alt={photo.label}
+                    style={{
+                      width: "100%",
+                      height: "220px",
+                      objectFit: "cover",
+                      borderRadius: "18px",
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="content-card wide">
           <div className="card-head">
             <div>
@@ -675,459 +1286,12 @@ function SubmissionDetails({ submission, onBack, theme, onToggleTheme }) {
   );
 }
 
-function UserManagementPage({ users, setUsers, currentUser }) {
-  const [form, setForm] = useState(emptyUserForm);
-  const [editingId, setEditingId] = useState(null);
-
-  const supervisors = users.filter((user) => user.role === "supervisor");
-
-  function updateForm(field, value) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-      ...(field === "role"
-        ? {
-            permissions: getPermissionsByRole(value),
-            roleLabel: getRoleLabel(value),
-            shift:
-              value === "admin" || value === "committee_head"
-                ? "كل الفترات"
-                : current.shift === "كل الفترات"
-                ? "الفترة الأولى"
-                : current.shift,
-            supervisor:
-              value === "admin" || value === "committee_head"
-                ? "—"
-                : current.supervisor,
-          }
-        : {}),
-    }));
-  }
-
-  function updatePermission(permissionName) {
-    setForm((current) => ({
-      ...current,
-      permissions: {
-        ...current.permissions,
-        [permissionName]: !current.permissions[permissionName],
-      },
-    }));
-  }
-
-  function resetForm() {
-    setForm(emptyUserForm);
-    setEditingId(null);
-  }
-
-  function saveUser(event) {
-    event.preventDefault();
-
-    if (!form.fullName.trim() || !form.username.trim() || !form.password.trim()) {
-      alert("الاسم الكامل واسم المستخدم وكلمة المرور حقول مطلوبة.");
-      return;
-    }
-
-    const usernameTaken = users.some(
-      (user) =>
-        user.username.trim().toLowerCase() === form.username.trim().toLowerCase() &&
-        user.id !== editingId
-    );
-
-    if (usernameTaken) {
-      alert("اسم المستخدم مستخدم مسبقًا.");
-      return;
-    }
-
-    if (editingId) {
-      setUsers((current) =>
-        current.map((user) =>
-          user.id === editingId
-            ? {
-                ...user,
-                ...form,
-                name: form.fullName,
-                roleLabel:
-                  form.role === "supervisor"
-                    ? `مشرف ${form.shift}`
-                    : getRoleLabel(form.role),
-              }
-            : user
-        )
-      );
-    } else {
-      const newUser = {
-        id: Date.now(),
-        ...form,
-        name: form.fullName,
-        roleLabel:
-          form.role === "supervisor"
-            ? `مشرف ${form.shift}`
-            : getRoleLabel(form.role),
-        todayVisits: 0,
-        suspicious: 0,
-        accuracy: "100%",
-      };
-
-      setUsers((current) => [newUser, ...current]);
-    }
-
-    resetForm();
-  }
-
-  function editUser(user) {
-    setEditingId(user.id);
-    setForm({
-      nationalId: user.nationalId || "",
-      fullName: user.fullName || user.name || "",
-      phone: user.phone || "",
-      username: user.username || "",
-      password: user.password || "",
-      role: user.role || "field",
-      shift: user.shift || "الفترة الأولى",
-      supervisor: user.supervisor || "—",
-      status: user.status || "نشط",
-      permissions: user.permissions || getPermissionsByRole(user.role || "field"),
-    });
-  }
-
-  function toggleStatus(userId) {
-    if (userId === currentUser.id) {
-      alert("لا يمكن إيقاف الحساب الحالي.");
-      return;
-    }
-
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === userId
-          ? { ...user, status: user.status === "نشط" ? "موقوف" : "نشط" }
-          : user
-      )
-    );
-  }
-
-  function deleteUser(userId) {
-    if (userId === currentUser.id) {
-      alert("لا يمكن حذف الحساب الحالي.");
-      return;
-    }
-
-    const confirmDelete = window.confirm("هل تريد حذف هذا المستخدم؟");
-    if (!confirmDelete) return;
-
-    setUsers((current) => current.filter((user) => user.id !== userId));
-  }
-
-  return (
-    <section className="content-grid">
-      <form className="content-card wide" onSubmit={saveUser}>
-        <div className="card-head">
-          <div>
-            <h3>👥 إدارة المستخدمين والصلاحيات</h3>
-            <p>إنشاء الحسابات وتحديد الصلاحيات وحالة التفعيل.</p>
-          </div>
-
-          {editingId && (
-            <button type="button" className="mini-btn" onClick={resetForm}>
-              إلغاء التعديل
-            </button>
-          )}
-        </div>
-
-        <div className="field-form-layout">
-          <div className="form-card">
-            <h3>{editingId ? "تعديل مستخدم" : "إضافة مستخدم جديد"}</h3>
-
-            <div className="form-grid">
-              <label>
-                رقم الهوية
-                <input
-                  type="text"
-                  value={form.nationalId}
-                  onChange={(event) => updateForm("nationalId", event.target.value)}
-                  placeholder="رقم الهوية"
-                />
-              </label>
-
-              <label>
-                الاسم الكامل
-                <input
-                  type="text"
-                  value={form.fullName}
-                  onChange={(event) => updateForm("fullName", event.target.value)}
-                  placeholder="الاسم الكامل"
-                />
-              </label>
-
-              <label>
-                رقم الجوال
-                <input
-                  type="text"
-                  value={form.phone}
-                  onChange={(event) => updateForm("phone", event.target.value)}
-                  placeholder="رقم الجوال"
-                />
-              </label>
-
-              <label>
-                اسم المستخدم
-                <input
-                  type="text"
-                  value={form.username}
-                  onChange={(event) => updateForm("username", event.target.value)}
-                  placeholder="اسم المستخدم"
-                />
-              </label>
-
-              <label>
-                كلمة المرور
-                <input
-                  type="text"
-                  value={form.password}
-                  onChange={(event) => updateForm("password", event.target.value)}
-                  placeholder="كلمة المرور"
-                />
-              </label>
-
-              <label>
-                الدور الوظيفي
-                <select
-                  value={form.role}
-                  onChange={(event) => updateForm("role", event.target.value)}
-                >
-                  {roleOptions.map((role) => (
-                    <option key={role.value} value={role.value}>
-                      {role.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                الفترة
-                <select
-                  value={form.shift}
-                  onChange={(event) => updateForm("shift", event.target.value)}
-                  disabled={form.role === "admin" || form.role === "committee_head"}
-                >
-                  <option>كل الفترات</option>
-                  {shiftOptions.map((shift) => (
-                    <option key={shift}>{shift}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                المشرف التابع له
-                <select
-                  value={form.supervisor}
-                  onChange={(event) => updateForm("supervisor", event.target.value)}
-                  disabled={form.role === "admin" || form.role === "committee_head"}
-                >
-                  <option>—</option>
-                  {supervisors.map((supervisor) => (
-                    <option key={supervisor.id}>{supervisor.fullName}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                حالة الحساب
-                <select
-                  value={form.status}
-                  onChange={(event) => updateForm("status", event.target.value)}
-                >
-                  <option>نشط</option>
-                  <option>موقوف</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div className="form-card">
-            <h3>صلاحيات الحساب</h3>
-
-            <div className="notes-list">
-              {Object.entries({
-                canFillForms: "تعبئة الاستمارات",
-                canViewSubmissions: "مشاهدة سجل التعبئة",
-                canViewReports: "مشاهدة التقارير والرقابة",
-                canManageUsers: "إدارة المستخدمين",
-                canManagePermissions: "تعديل الصلاحيات",
-              }).map(([key, label]) => (
-                <button
-                  type="button"
-                  key={key}
-                  className={`mini-btn ${form.permissions[key] ? "active" : ""}`}
-                  onClick={() => updatePermission(key)}
-                  style={{
-                    width: "100%",
-                    justifyContent: "space-between",
-                    display: "flex",
-                    alignItems: "center",
-                    background: form.permissions[key]
-                      ? "rgba(66, 199, 137, 0.18)"
-                      : "var(--toggle-bg)",
-                  }}
-                >
-                  <span>{label}</span>
-                  <strong>{form.permissions[key] ? "مفتوحة ✅" : "مقفلة 🔒"}</strong>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="submit-row">
-          <button type="submit" className="main-submit">
-            {editingId ? "حفظ تعديل المستخدم" : "إنشاء المستخدم"}
-          </button>
-        </div>
-      </form>
-
-      <div className="content-card wide">
-        <div className="card-head">
-          <div>
-            <h3>قائمة المستخدمين</h3>
-            <p>الحسابات المعتمدة في النظام</p>
-          </div>
-        </div>
-
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>الاسم</th>
-                <th>رقم الهوية</th>
-                <th>الجوال</th>
-                <th>اسم المستخدم</th>
-                <th>الدور</th>
-                <th>الفترة</th>
-                <th>المشرف</th>
-                <th>الحالة</th>
-                <th>الصلاحيات</th>
-                <th>إجراءات</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td>{user.fullName}</td>
-                  <td>{user.nationalId || "—"}</td>
-                  <td>{user.phone || "—"}</td>
-                  <td>{user.username}</td>
-                  <td>{user.roleLabel || getRoleLabel(user.role)}</td>
-                  <td>{user.shift}</td>
-                  <td>{user.supervisor}</td>
-                  <td>
-                    <span className={`status-badge ${getStatusClass(user.status)}`}>
-                      {user.status}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="status-badge success">
-                      {Object.values(user.permissions || {}).filter(Boolean).length} مفتوحة
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        onClick={() => editUser(user)}
-                      >
-                        تعديل
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        onClick={() => toggleStatus(user.id)}
-                      >
-                        {user.status === "نشط" ? "إيقاف" : "تفعيل"}
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-btn"
-                        onClick={() => deleteUser(user.id)}
-                      >
-                        حذف
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function VisitsTable({ visits }) {
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>الموظف</th>
-            <th>السكن</th>
-            <th>رقم التصريح</th>
-            <th>بداية الكشف</th>
-            <th>وقت الإرسال</th>
-            <th>المدة</th>
-            <th>الفترة</th>
-            <th>الموقع</th>
-            <th>الصورة</th>
-            <th>الحالة</th>
-            <th>الخطورة</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {visits.length === 0 ? (
-            <tr>
-              <td colSpan="11">لا توجد جولات مسجلة.</td>
-            </tr>
-          ) : (
-            visits.map((visit) => (
-              <tr key={visit.id}>
-                <td>{visit.employee}</td>
-                <td>{visit.housing}</td>
-                <td>{visit.permit}</td>
-                <td>{visit.startTime}</td>
-                <td>{visit.submitTime}</td>
-                <td>{visit.duration}</td>
-                <td>{visit.shift}</td>
-                <td>{visit.gps}</td>
-                <td>{visit.photo}</td>
-                <td>
-                  <span className={`status-badge ${getStatusClass(visit.status)}`}>
-                    {visit.status}
-                  </span>
-                </td>
-                <td>
-                  <span className={`status-badge ${getRiskClass(visit.risk)}`}>
-                    {visit.risk}
-                  </span>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function DashboardPage({
   user,
   users,
-  setUsers,
+  loadAllData,
   visits,
-  setVisits,
   submissions,
-  setSubmissions,
   onLogout,
   onProfile,
   onOpenSubmission,
@@ -1135,6 +1299,7 @@ function DashboardPage({
   onToggleTheme,
 }) {
   const [activeView, setActiveView] = useState(getDefaultView(user));
+  const [savingForm, setSavingForm] = useState(false);
   const [formData, setFormData] = useState({
     ...emptyForm,
     shift: user.shift === "كل الفترات" ? "الفترة الأولى" : user.shift,
@@ -1148,7 +1313,6 @@ function DashboardPage({
     () => filterByUserAccess(submissions, user),
     [submissions, user]
   );
-
   const activeForm = formTypes[formData.formType];
 
   const summary = useMemo(() => {
@@ -1158,15 +1322,55 @@ function DashboardPage({
     const third = visibleVisits.filter((item) => item.shift === "الفترة الثالثة").length;
     const review = visibleVisits.filter((item) => item.status === "تحتاج مراجعة").length;
     const approved = visibleVisits.filter((item) => item.status === "معتمدة").length;
+    const outside = visibleVisits.filter((item) => item.gps === "خارج النطاق").length;
+    const noPhoto = visibleVisits.filter((item) => item.photo === "غير مرفقة").length;
     const compliance = total > 0 ? Math.round((approved / total) * 100) : 0;
 
-    return { total, first, second, third, review, approved, compliance };
+    return { total, first, second, third, review, approved, outside, noPhoto, compliance };
   }, [visibleVisits]);
+
+  const priorityItems = useMemo(() => {
+    const items = [];
+
+    if (summary.review > 0) {
+      items.push({
+        label: "نماذج تحتاج مراجعة",
+        value: summary.review,
+        note: "تحتاج إجراء من المشرف",
+      });
+    }
+
+    if (summary.outside > 0) {
+      items.push({
+        label: "جولات خارج النطاق",
+        value: summary.outside,
+        note: "تحتاج تحقق من الموقع",
+      });
+    }
+
+    if (summary.noPhoto > 0) {
+      items.push({
+        label: "جولات بدون صورة",
+        value: summary.noPhoto,
+        note: "تحتاج استكمال توثيق",
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        label: "الوضع مستقر",
+        value: "✓",
+        note: "لا توجد أولويات حرجة حاليًا",
+      });
+    }
+
+    return items;
+  }, [summary]);
 
   const tabs = [
     {
       id: "overview",
-      label: "📌 نظرة عامة",
+      label: "📌 مركز العمليات",
       visible: user.permissions.canViewReports,
     },
     {
@@ -1176,7 +1380,7 @@ function DashboardPage({
     },
     {
       id: "submissions",
-      label: "📚 سجل التعبئة",
+      label: user.role === "field" ? "📚 تعبئاتي" : "📚 سجل التعبئة",
       visible: user.permissions.canViewSubmissions,
     },
     {
@@ -1186,7 +1390,7 @@ function DashboardPage({
     },
     {
       id: "reports",
-      label: "🛡️ الرقابة والتقارير",
+      label: "🛡️ التقارير",
       visible: user.permissions.canViewReports,
     },
   ].filter((tab) => tab.visible);
@@ -1211,58 +1415,162 @@ function DashboardPage({
     }));
   }
 
-  function submitInspection(event) {
+  function handlePhotoUpload(event, label) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+
+    const newPhoto = {
+      id: `${label}-${Date.now()}`,
+      label,
+      name: file.name,
+      file,
+      previewUrl,
+    };
+
+    setFormData((current) => ({
+      ...current,
+      photos: [...current.photos.filter((photo) => photo.label !== label), newPhoto],
+    }));
+  }
+
+  async function uploadPhotos(submissionId, photos) {
+    const uploaded = [];
+
+    for (const photo of photos) {
+      const extension = photo.name.split(".").pop() || "jpg";
+      const safeName = `${submissionId}/${Date.now()}-${Math.random()
+        .toString(16)
+        .slice(2)}.${extension}`;
+
+      const { error } = await supabase.storage.from("inspection-photos").upload(safeName, photo.file, {
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const { data } = supabase.storage.from("inspection-photos").getPublicUrl(safeName);
+
+      uploaded.push({
+        id: photo.id,
+        label: photo.label,
+        name: photo.name,
+        path: safeName,
+        url: data.publicUrl,
+      });
+    }
+
+    return uploaded;
+  }
+
+  async function submitInspection(event) {
     event.preventDefault();
+    setSavingForm(true);
 
-    const selectedShift =
-      user.role === "field" && user.shift !== "كل الفترات" ? user.shift : formData.shift;
+    try {
+      const selectedShift =
+        user.role === "field" && user.shift !== "كل الفترات" ? user.shift : formData.shift;
 
-    const newSubmission = {
-      id: Date.now(),
-      userId: user.id,
-      employee: user.fullName,
-      ...formData,
-      shift: selectedShift,
-      answers,
-      submittedAt: getNowTime(),
-      status:
-        formData.gpsStatus === "خارج النطاق" || formData.photoStatus === "غير مرفقة"
-          ? "تحتاج مراجعة"
-          : "معتمدة",
-      risk:
-        formData.gpsStatus === "خارج النطاق" || formData.photoStatus === "غير مرفقة"
+      const hasPhotos = formData.photos.length > 0;
+      const isNeedsReview =
+        formData.gpsStatus === "خارج النطاق" ||
+        !hasPhotos ||
+        formData.actionTaken !== "لا توجد ملاحظات";
+
+      const status = isNeedsReview ? "تحتاج مراجعة" : "معتمدة";
+      const risk =
+        formData.gpsStatus === "خارج النطاق" || !hasPhotos
+          ? "مرتفع"
+          : formData.actionTaken !== "لا توجد ملاحظات"
           ? "متوسط"
-          : "منخفض",
-    };
+          : "منخفض";
 
-    const newVisit = {
-      id: Date.now() + 1,
-      userId: user.id,
-      employee: user.fullName,
-      housing: formData.housingName || "سكن جديد",
-      permit: formData.permitNumber || "—",
-      startTime: formData.visitTime || getNowTime(),
-      submitTime: getNowTime(),
-      duration: "قيد الربط",
-      shift: selectedShift,
-      gps: formData.gpsStatus,
-      photo: formData.photoStatus,
-      status: newSubmission.status,
-      risk: newSubmission.risk,
-    };
+      const draftSubmission = {
+        user_id: user.id,
+        employee: user.fullName,
+        form_type: formData.formType,
+        housing_name: formData.housingName || "",
+        building_number: formData.buildingNumber || "",
+        permit_number: formData.permitNumber || "",
+        nationality: formData.nationality || "",
+        pilgrims_count: formData.pilgrimsCount || "",
+        electricity_number: formData.electricityNumber || "",
+        owner_name: formData.ownerName || "",
+        address: formData.address || "",
+        visit_date: formData.visitDate || "",
+        visit_time: formData.visitTime || "",
+        shift: selectedShift,
+        gps_status: formData.gpsStatus,
+        photo_status: hasPhotos ? "مرفقة" : "غير مرفقة",
+        action_taken: formData.actionTaken,
+        deadline_hours: formData.deadlineHours || "",
+        notes: formData.notes || "",
+        answers,
+        photos: [],
+        submitted_at: getNowTime(),
+        status,
+        risk,
+      };
 
-    setSubmissions((current) => [newSubmission, ...current]);
-    setVisits((current) => [newVisit, ...current]);
+      const { data: insertedSubmission, error: submissionError } = await supabase
+        .from("submissions")
+        .insert(draftSubmission)
+        .select()
+        .single();
 
-    setFormData({
-      ...emptyForm,
-      shift: user.shift === "كل الفترات" ? "الفترة الأولى" : user.shift,
-      visitDate: getTodayDate(),
-      visitTime: getNowTime(),
-    });
+      if (submissionError) throw new Error(submissionError.message);
 
-    setAnswers({});
-    setActiveView("submissions");
+      let uploadedPhotos = [];
+
+      if (formData.photos.length > 0) {
+        uploadedPhotos = await uploadPhotos(insertedSubmission.id, formData.photos);
+
+        const { error: updateError } = await supabase
+          .from("submissions")
+          .update({
+            photos: uploadedPhotos,
+            photo_status: "مرفقة",
+          })
+          .eq("id", insertedSubmission.id);
+
+        if (updateError) throw new Error(updateError.message);
+      }
+
+      const { error: visitError } = await supabase.from("visits").insert({
+        user_id: user.id,
+        employee: user.fullName,
+        housing: formData.housingName || "سكن غير محدد",
+        permit: formData.permitNumber || "—",
+        submit_time: getNowTime(),
+        shift: selectedShift,
+        gps: formData.gpsStatus,
+        photo: uploadedPhotos.length > 0 ? "مرفقة" : "غير مرفقة",
+        status,
+        risk,
+      });
+
+      if (visitError) throw new Error(visitError.message);
+
+      await loadAllData();
+
+      setFormData({
+        ...emptyForm,
+        shift: user.shift === "كل الفترات" ? "الفترة الأولى" : user.shift,
+        visitDate: getTodayDate(),
+        visitTime: getNowTime(),
+      });
+
+      setAnswers({});
+      setActiveView("submissions");
+    } catch (error) {
+      alert(`تعذر حفظ الاستمارة: ${error.message}`);
+    } finally {
+      setSavingForm(false);
+    }
   }
 
   return (
@@ -1314,95 +1622,99 @@ function DashboardPage({
       </header>
 
       <section className="dashboard-shell">
-        <section className="kpi-grid">
-          <div className="kpi-card">
-            <div className="kpi-icon purple">🧭</div>
-            <span>إجمالي الجولات</span>
-            <strong>{summary.total}</strong>
-          </div>
+        {activeView !== "field" && (
+          <section className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-icon purple">🧭</div>
+              <span>إجمالي الجولات</span>
+              <strong>{summary.total}</strong>
+            </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon green">🌅</div>
-            <span>الفترة الأولى</span>
-            <strong>{summary.first}</strong>
-          </div>
+            <div className="kpi-card">
+              <div className="kpi-icon green">✅</div>
+              <span>معتمدة</span>
+              <strong>{summary.approved}</strong>
+            </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon orange">🌆</div>
-            <span>الفترة الثانية</span>
-            <strong>{summary.second}</strong>
-          </div>
+            <div className="kpi-card">
+              <div className="kpi-icon red">⚠️</div>
+              <span>تحتاج مراجعة</span>
+              <strong>{summary.review}</strong>
+            </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon mint">🌙</div>
-            <span>الفترة الثالثة</span>
-            <strong>{summary.third}</strong>
-          </div>
+            <div className="kpi-card">
+              <div className="kpi-icon orange">📍</div>
+              <span>خارج النطاق</span>
+              <strong>{summary.outside}</strong>
+            </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon red">⚠️</div>
-            <span>تحتاج مراجعة</span>
-            <strong>{summary.review}</strong>
-          </div>
+            <div className="kpi-card">
+              <div className="kpi-icon mint">📸</div>
+              <span>بدون صورة</span>
+              <strong>{summary.noPhoto}</strong>
+            </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon purple">✅</div>
-            <span>نسبة الالتزام</span>
-            <strong>{summary.compliance}%</strong>
-          </div>
-        </section>
+            <div className="kpi-card">
+              <div className="kpi-icon purple">📊</div>
+              <span>نسبة الالتزام</span>
+              <strong>{summary.compliance}%</strong>
+            </div>
+          </section>
+        )}
 
         {activeView === "overview" && (
           <>
             <section className="overview-panel">
               <div>
-                <span>لوحة التشغيل اليومية</span>
-                <h2>متابعة الجولات وتعبئة استمارات كشف مساكن الحجاج</h2>
+                <span>مركز العمليات</span>
+                <h2>متابعة الجولات الميدانية حسب الصلاحية</h2>
                 <p>
-                  تعرض هذه اللوحة ملخص الجولات، حالات المراجعة، ونسبة الالتزام
-                  حسب نطاق الصلاحية.
+                  تعرض هذه الصفحة مؤشرات التشغيل، أولويات المراجعة، وآخر الجولات المسجلة.
                 </p>
               </div>
 
               <div className="system-status">
                 <strong>🟢 تشغيل نشط</strong>
-                <small>{user.roleLabel || getRoleLabel(user.role)}</small>
+                <small>
+                  {user.shift === "كل الفترات"
+                    ? "كل الفترات"
+                    : `${user.shift} · ${shiftTimes[user.shift]}`}
+                </small>
               </div>
             </section>
 
             <section className="command-layout">
               <div className="command-main">
-                <span>🎯 مركز الرقابة الميدانية</span>
-                <h2>قراءة موحدة لأداء الجولات</h2>
-                <p>
-                  يتم احتساب الجولات حسب الفترة، مع رصد النماذج التي تحتاج مراجعة
-                  بسبب نقص الصورة أو خروج الموقع عن النطاق.
-                </p>
+                <span>🎯 الأولوية الآن</span>
+                <h2>{priorityItems[0]?.label}</h2>
+                <p>{priorityItems[0]?.note}</p>
 
                 <div className="command-footer">
-                  <div>
-                    <strong>{summary.compliance}%</strong>
-                    <small>التزام ميداني</small>
-                  </div>
-                  <div>
-                    <strong>{summary.approved}</strong>
-                    <small>جولات معتمدة</small>
-                  </div>
-                  <div>
-                    <strong>{summary.review}</strong>
-                    <small>تحتاج مراجعة</small>
-                  </div>
+                  {priorityItems.map((item) => (
+                    <div key={item.label}>
+                      <strong>{item.value}</strong>
+                      <small>{item.label}</small>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="mini-command danger">
-                <span>⚠️ أولوية المشرف</span>
-                <strong>مراجعة النماذج الناقصة</strong>
+              <div className="mini-command">
+                <span>🕓 الفترة الأعلى نشاطًا</span>
+                <strong>
+                  {
+                    [
+                      ["الفترة الأولى", summary.first],
+                      ["الفترة الثانية", summary.second],
+                      ["الفترة الثالثة", summary.third],
+                    ].sort((a, b) => b[1] - a[1])[0][0]
+                  }
+                </strong>
               </div>
 
-              <div className="mini-command">
-                <span>📚 سجل التعبئة</span>
-                <strong>{visibleSubmissions.length} نموذج</strong>
+              <div className="mini-command danger">
+                <span>⚠️ تحتاج إجراء</span>
+                <strong>{summary.review + summary.outside + summary.noPhoto}</strong>
               </div>
             </section>
 
@@ -1411,43 +1723,32 @@ function DashboardPage({
                 <div className="card-head">
                   <div>
                     <h3>📊 توزيع الجولات حسب الفترة</h3>
-                    <p>الفترة الأولى / الثانية / الثالثة</p>
+                    <p>قراءة سريعة لحركة التشغيل</p>
                   </div>
                 </div>
 
                 <div className="period-bars">
-                  <div className="period-row">
-                    <div>
-                      <strong>🌅 الفترة الأولى</strong>
-                      <span>8:00 ص - 4:00 م</span>
-                    </div>
-                    <div className="period-track">
-                      <span style={{ width: `${Math.max(summary.first * 18, 8)}%` }} />
-                    </div>
-                    <b>{summary.first}</b>
-                  </div>
+                  {shiftOptions.map((shift) => {
+                    const value =
+                      shift === "الفترة الأولى"
+                        ? summary.first
+                        : shift === "الفترة الثانية"
+                        ? summary.second
+                        : summary.third;
 
-                  <div className="period-row">
-                    <div>
-                      <strong>🌆 الفترة الثانية</strong>
-                      <span>4:00 م - 12:00 ص</span>
-                    </div>
-                    <div className="period-track">
-                      <span style={{ width: `${Math.max(summary.second * 18, 8)}%` }} />
-                    </div>
-                    <b>{summary.second}</b>
-                  </div>
-
-                  <div className="period-row">
-                    <div>
-                      <strong>🌙 الفترة الثالثة</strong>
-                      <span>12:00 ص - 8:00 ص</span>
-                    </div>
-                    <div className="period-track">
-                      <span style={{ width: `${Math.max(summary.third * 18, 8)}%` }} />
-                    </div>
-                    <b>{summary.third}</b>
-                  </div>
+                    return (
+                      <div className="period-row" key={shift}>
+                        <div>
+                          <strong>{shift}</strong>
+                          <span>{shiftTimes[shift]}</span>
+                        </div>
+                        <div className="period-track">
+                          <span style={{ width: `${Math.max(value * 18, 8)}%` }} />
+                        </div>
+                        <b>{value}</b>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1469,9 +1770,7 @@ function DashboardPage({
 
                   <div className="summary-box danger-box">
                     <span>📍 خارج النطاق</span>
-                    <strong>
-                      {visibleVisits.filter((item) => item.gps === "خارج النطاق").length}
-                    </strong>
+                    <strong>{summary.outside}</strong>
                   </div>
 
                   <div className="summary-box">
@@ -1482,7 +1781,7 @@ function DashboardPage({
                   </div>
 
                   <div className="summary-box warning-box">
-                    <span>🧾 نماذج</span>
+                    <span>🧾 النماذج</span>
                     <strong>{visibleSubmissions.length}</strong>
                   </div>
                 </div>
@@ -1491,12 +1790,18 @@ function DashboardPage({
               <div className="content-card wide">
                 <div className="card-head">
                   <div>
-                    <h3>🧾 سجل الجولات الميدانية</h3>
-                    <p>جدول رقابي لمتابعة الزيارات الميدانية</p>
+                    <h3>🧾 آخر الجولات الميدانية</h3>
+                    <p>آخر خمس جولات مسجلة</p>
                   </div>
+
+                  {user.permissions.canViewSubmissions && (
+                    <button type="button" className="mini-btn" onClick={() => setActiveView("submissions")}>
+                      عرض السجل
+                    </button>
+                  )}
                 </div>
 
-                <VisitsTable visits={visibleVisits} />
+                <VisitsTable visits={visibleVisits.slice(0, 5)} compact />
               </div>
             </section>
           </>
@@ -1550,9 +1855,7 @@ function DashboardPage({
                       <input
                         type="text"
                         value={formData.buildingNumber}
-                        onChange={(event) =>
-                          updateField("buildingNumber", event.target.value)
-                        }
+                        onChange={(event) => updateField("buildingNumber", event.target.value)}
                         placeholder="رقم العمارة"
                       />
                     </label>
@@ -1582,9 +1885,7 @@ function DashboardPage({
                       <input
                         type="number"
                         value={formData.pilgrimsCount}
-                        onChange={(event) =>
-                          updateField("pilgrimsCount", event.target.value)
-                        }
+                        onChange={(event) => updateField("pilgrimsCount", event.target.value)}
                         placeholder="عدد الحجاج"
                       />
                     </label>
@@ -1594,9 +1895,7 @@ function DashboardPage({
                       <input
                         type="text"
                         value={formData.electricityNumber}
-                        onChange={(event) =>
-                          updateField("electricityNumber", event.target.value)
-                        }
+                        onChange={(event) => updateField("electricityNumber", event.target.value)}
                         placeholder="رقم الاشتراك"
                       />
                     </label>
@@ -1670,17 +1969,6 @@ function DashboardPage({
                     </label>
 
                     <label>
-                      حالة الصورة
-                      <select
-                        value={formData.photoStatus}
-                        onChange={(event) => updateField("photoStatus", event.target.value)}
-                      >
-                        <option>مرفقة</option>
-                        <option>غير مرفقة</option>
-                      </select>
-                    </label>
-
-                    <label>
                       الإجراء المتخذ
                       <select
                         value={formData.actionTaken}
@@ -1698,14 +1986,58 @@ function DashboardPage({
                       <input
                         type="text"
                         value={formData.deadlineHours}
-                        onChange={(event) =>
-                          updateField("deadlineHours", event.target.value)
-                        }
+                        onChange={(event) => updateField("deadlineHours", event.target.value)}
                         placeholder="المهلة"
                       />
                     </label>
                   </div>
                 </div>
+              </div>
+
+              <div className="form-card">
+                <h3>📸 الصور المرفقة</h3>
+
+                <div className="form-grid">
+                  <label>
+                    صورة واجهة السكن
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(event) => handlePhotoUpload(event, "صورة واجهة السكن")}
+                    />
+                  </label>
+
+                  <label>
+                    صورة الترخيص / اللوحة
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(event) => handlePhotoUpload(event, "صورة الترخيص / اللوحة")}
+                    />
+                  </label>
+
+                  <label>
+                    صورة الملاحظات
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(event) => handlePhotoUpload(event, "صورة الملاحظات")}
+                    />
+                  </label>
+                </div>
+
+                {formData.photos.length > 0 && (
+                  <div className="notes-list" style={{ marginTop: "16px" }}>
+                    {formData.photos.map((photo) => (
+                      <span className="note-chip" key={photo.id}>
+                        ✅ {photo.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="inspection-header">
@@ -1756,8 +2088,8 @@ function DashboardPage({
               </div>
 
               <div className="submit-row">
-                <button type="submit" className="main-submit">
-                  ✅ إرسال الاستمارة وحفظ التعبئة
+                <button type="submit" className="main-submit" disabled={savingForm}>
+                  {savingForm ? "جاري حفظ الاستمارة..." : "✅ إرسال الاستمارة وحفظ التعبئة"}
                 </button>
               </div>
             </form>
@@ -1798,6 +2130,7 @@ function DashboardPage({
                         <small>الموظف: {item.employee}</small>
                         <small>الفترة: {item.shift}</small>
                         <small>وقت الإرسال: {item.submittedAt}</small>
+                        <small>الصور: {item.photos?.length || 0}</small>
                         <span className={`status-badge ${getStatusClass(item.status)}`}>
                           {item.status}
                         </span>
@@ -1811,11 +2144,7 @@ function DashboardPage({
         )}
 
         {activeView === "users" && (
-          <UserManagementPage
-            users={users}
-            setUsers={setUsers}
-            currentUser={user}
-          />
+          <UserManagementPage users={users} loadAllData={loadAllData} currentUser={user} />
         )}
 
         {activeView === "reports" && (
@@ -1860,9 +2189,7 @@ function DashboardPage({
                 </div>
                 <div className="summary-box">
                   <span>رؤساء لجنة</span>
-                  <strong>
-                    {users.filter((item) => item.role === "committee_head").length}
-                  </strong>
+                  <strong>{users.filter((item) => item.role === "committee_head").length}</strong>
                 </div>
                 <div className="summary-box">
                   <span>مشرفون</span>
@@ -1885,19 +2212,11 @@ function App() {
   const [screen, setScreen] = useState("login");
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [theme, setTheme] = useState("dark");
+  const [loading, setLoading] = useState(true);
 
-  const [users, setUsers] = useState(() =>
-    readStorage(STORAGE_KEYS.users, defaultUsers)
-  );
-
-  const [visits, setVisits] = useState(() =>
-    readStorage(STORAGE_KEYS.visits, [])
-  );
-
-  const [submissions, setSubmissions] = useState(() =>
-    readStorage(STORAGE_KEYS.submissions, [])
-  );
-
+  const [users, setUsers] = useState([]);
+  const [visits, setVisits] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(() => {
     const storedId = localStorage.getItem(STORAGE_KEYS.currentUserId);
     return storedId ? Number(storedId) : null;
@@ -1908,57 +2227,89 @@ function App() {
     return users.find((user) => user.id === currentUserId && user.status === "نشط") || null;
   }, [users, currentUserId]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.users, JSON.stringify(users));
-  }, [users]);
+  async function loadAllData() {
+    setLoading(true);
+
+    const [usersResponse, visitsResponse, submissionsResponse] = await Promise.all([
+      supabase.from("users_profiles").select("*").order("id", { ascending: true }),
+      supabase.from("visits").select("*").order("created_at", { ascending: false }),
+      supabase.from("submissions").select("*").order("created_at", { ascending: false }),
+    ]);
+
+    if (usersResponse.error) {
+      alert(`خطأ تحميل المستخدمين: ${usersResponse.error.message}`);
+    } else {
+      setUsers((usersResponse.data || []).map(toUser));
+    }
+
+    if (visitsResponse.error) {
+      alert(`خطأ تحميل الجولات: ${visitsResponse.error.message}`);
+    } else {
+      setVisits((visitsResponse.data || []).map(toVisit));
+    }
+
+    if (submissionsResponse.error) {
+      alert(`خطأ تحميل الاستمارات: ${submissionsResponse.error.message}`);
+    } else {
+      setSubmissions((submissionsResponse.data || []).map(toSubmission));
+    }
+
+    setLoading(false);
+  }
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.visits, JSON.stringify(visits));
-  }, [visits]);
+    loadAllData();
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.submissions, JSON.stringify(submissions));
-  }, [submissions]);
-
-  useEffect(() => {
-    if (currentUser) {
+    if (!loading && currentUser) {
       setScreen("dashboard");
-    } else if (currentUserId) {
+    } else if (!loading && currentUserId && !currentUser) {
       localStorage.removeItem(STORAGE_KEYS.currentUserId);
       setCurrentUserId(null);
       setScreen("login");
     }
-  }, [currentUser, currentUserId]);
+  }, [loading, currentUser, currentUserId]);
 
   function toggleTheme() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
 
-  function handleLogin(username, password) {
-    if (!username || !password) {
-      return { error: "يرجى إدخال اسم المستخدم وكلمة المرور." };
+  async function handleLogin(nationalId, password) {
+    if (!nationalId || !password) {
+      return { error: "يرجى إدخال رقم الهوية وكلمة المرور." };
     }
 
-    const userByUsername = users.find(
-      (user) => user.username.trim().toLowerCase() === username.trim().toLowerCase()
-    );
+    const { data, error } = await supabase
+      .from("users_profiles")
+      .select("*")
+      .eq("national_id", nationalId.trim())
+      .maybeSingle();
 
-    if (!userByUsername) {
-      return { error: "اسم المستخدم غير صحيح." };
+    if (error || !data) {
+      return { error: "رقم الهوية غير مسجل في النظام." };
     }
 
-    if (userByUsername.status !== "نشط") {
+    const user = toUser(data);
+
+    if (user.status !== "نشط") {
       return { error: "هذا الحساب غير مفعل. يرجى مراجعة إدارة النظام." };
     }
 
-    if (userByUsername.password !== password) {
+    if (user.password !== password) {
       return { error: "كلمة المرور غير صحيحة." };
     }
 
-    localStorage.setItem(STORAGE_KEYS.currentUserId, String(userByUsername.id));
-    setCurrentUserId(userByUsername.id);
+    localStorage.setItem(STORAGE_KEYS.currentUserId, String(user.id));
+    setCurrentUserId(user.id);
+
+    const exists = users.some((item) => item.id === user.id);
+    if (!exists) {
+      setUsers((current) => [...current, user]);
+    }
+
     setScreen("dashboard");
-    return { user: userByUsername };
+    return { user };
   }
 
   function logout() {
@@ -1970,13 +2321,19 @@ function App() {
 
   let content = null;
 
-  if (screen === "forgot") {
+  if (loading) {
     content = (
-      <ForgotPasswordPage
-        onBack={() => setScreen("login")}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
+      <main className="auth-page" dir="rtl">
+        <section className="reset-card">
+          <div className="reset-icon">⏳</div>
+          <h1>جاري تحميل النظام</h1>
+          <p>يتم الاتصال بقاعدة البيانات.</p>
+        </section>
+      </main>
+    );
+  } else if (screen === "forgot") {
+    content = (
+      <ForgotPasswordPage onBack={() => setScreen("login")} theme={theme} onToggleTheme={toggleTheme} />
     );
   } else if (screen === "profile" && currentUser) {
     content = (
@@ -2001,11 +2358,9 @@ function App() {
       <DashboardPage
         user={currentUser}
         users={users}
-        setUsers={setUsers}
+        loadAllData={loadAllData}
         visits={visits}
-        setVisits={setVisits}
         submissions={submissions}
-        setSubmissions={setSubmissions}
         onLogout={logout}
         onProfile={() => setScreen("profile")}
         onOpenSubmission={(submission) => {
